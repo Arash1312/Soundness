@@ -1,39 +1,27 @@
-# Project Name
+# NovaHash
 
-A concise and efficient project designed to solve **[problem/domain]** using **[technology/framework]**.
+NovaHash is a lightweight Python tool that generates SHA256 hashes for files.
 
 ## Features
 
-* Clean and maintainable codebase
-* Easy installation and setup
-* Well-documented API and usage
-* Scalable architecture
-* Open-source and community-friendly
-
-## Installation
-
-```bash
-git clone https://github.com/your-username/project-name.git
-cd project-name
-# Install dependencies
-```
+- Fast SHA256 hashing
+- Simple command line interface
+- Lightweight with no external dependencies
+- Cross platform support
 
 ## Usage
 
-Follow the setup instructions above and run the project according to your environment.
+```bash
+python novahash.py example.txt
+```
 
-## Technologies Used
+Example output:
 
-* [Technology 1]
-* [Technology 2]
-* [Technology 3]
-* [Technology 4]
-## Contributing
-
-Contributions are welcome! Feel free to fork the repository, create a feature branch, and submit a pull request.
+```
+SHA256:
+9f86d081884c7d659a2feaa0c55ad015...
+```
 
 ## License
 
-This project is licensed under the MIT License.
-
-
+MIT License
