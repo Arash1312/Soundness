@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+
+"""
+Klyro
+-----
+A lightweight, modern system monitor for the terminal.
+
+Features:
+- CPU usage
+- Memory usage
+- Disk usage
+- Network traffic
+- Live refresh
+- Clean terminal interface
+- Zero external dependencies
+
+Python 3.9+
+"""
+
+import os
+import shutil
+import time
+import platform
+from datetime import datetime
+
+
+REFRESH_RATE = 1.0
+
+
+def clear_screen():
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def get_cpu_usage():
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+
+            class FILETIME(ctypes.Structure):
+                _fields_ = [
+                    ("dwLowDateTime", ctypes.c_uint32),
+                    ("dwHighDateTime", ctypes.c_uint32),
+                ]
+
+            idle = FILETIME()
+            kernel = FILETIME()
+            user = FILETIME()
+
+            ctypes.windll.kernel32.GetSystemTimes(
+                ctypes.byref(idle),
+                ctypes.byref(kernel),
+                ctypes.byref(user),
+            )
+
+            def value(filetime):
+                return (
+                    filetime.dwHighDateTime << 32
+                ) + filetime.dwLowDateTime
+
+            idle_time = value(idle)
+            kernel_time = value(kernel)
+            user_time = value(user)
+
+            total = kernel_time + user_time
+            return round((1 - idle_time / total) * 100, 1)
+
+        except Exception:
+            return 0.0
+
+    try:
+        load = os.getloadavg()[0]
+        cpu_count = os.cpu_count() or 1
+        return round(min((load / cpu_count) * 100, 100), 1)
+    except (AttributeError, OSError):
+        return 0.0
+
+
+def get_memory_usage():
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            status = MEMORYSTATUSEX()
+            status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(
+                ctypes.byref(status)
+            )
+
+            return status.dwMemoryLoad
+
+        if platform.system() == "Linux":
+            with open("/proc/meminfo", "r", encoding="utf-8") as file:
+                data = file.read()
+
+            values = {}
+
+            for line in data.splitlines():
+                parts = line.split()
+
+                if len(parts) >= 2:
+                    values[parts[0].rstrip(":")] = int(parts[1])
+
+            total = values.get("MemTotal", 0)
+            available = values.get("MemAvailable", 0)
+
+            if total:
+                return round(((total - available) / total) * 100, 1)
+
+    except Exception:
+        pass
+
+    return 0.0
+
+
+def get_disk_usage():
+    try:
+        total, used, free = shutil.disk_usage(os.path.abspath(os.sep))
+
+        if total:
+            return round((used / total) * 100, 1)
+
+    except OSError:
+        pass
+
+    return 0.0
+
+
+def format_bytes(value):
+    units = ["B", "KB", "MB", "GB", "TB"]
+
+    for unit in units:
+        if value < 1024:
+            return f"{value:.1f} {unit}"
+
+        value /= 1024
+
+    return f"{value:.1f} PB"
+
+
+def get_network_stats():
+    """
+    Reads network counters from /proc/net/dev on Linux.
+    Falls back gracefully on other systems.
+    """
+
+    if platform.system() != "Linux":
+        return None
+
+    rx = 0
+    tx = 0
+
+    try:
+        with open("/proc/net/dev", "r", encoding="utf-8") as file:
+            for line in file:
+                if ":" not in line:
+                    continue
+
+                interface, data = line.split(":", 1)
+
+                if interface.strip() == "lo":
+                    continue
+
+                values = data.split()
+
+                if len(values) >= 9:
+                    rx += int(values[0])
+                    tx += int(values[8])
+
+        return rx, tx
+
+    except (OSError, ValueError):
+        return None
+
+
+def progress_bar(value, width=28):
+    value = max(0, min(value, 100))
+    filled = int((value / 100) * width)
+
+    return (
+        "[" +
+        "#" * filled +
+        "-" * (width - filled) +
+        f"] {value:5.1f}%"
+    )
+
+
+def render_header():
+    print("=" * 62)
+    print("  KLYRO  //  SYSTEM MONITOR")
+    print("=" * 62)
+    print(f"  Host      : {platform.node() or 'Unknown'}")
+    print(f"  OS        : {platform.system()} {platform.release()}")
+    print(f"  Python    : {platform.python_version()}")
+    print(f"  Updated   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("-" * 62)
+
+
+def render_metrics(network):
+    cpu = get_cpu_usage()
+    memory = get_memory_usage()
+    disk = get_disk_usage()
+
+    print("\n  SYSTEM")
+    print(f"  CPU       {progress_bar(cpu)}")
+    print(f"  Memory    {progress_bar(memory)}")
+    print(f"  Disk      {progress_bar(disk)}")
+
+    if network:
+        rx, tx = network
+
+        print("\n  NETWORK")
+        print(f"  Download  {format_bytes(rx)}")
+        print(f"  Upload    {format_bytes(tx)}")
+
+    print("\n" + "-" * 62)
+    print("  Press Ctrl+C to exit.")
+    print("=" * 62)
+
+
+def run():
+    previous_network = get_network_stats()
+
+    while True:
+        clear_screen()
+        render_header()
+
+        current_network = get_network_stats()
+
+        if current_network and previous_network:
+            rx_now, tx_now = current_network
+            rx_old, tx_old = previous_network
+
+            rx_delta = max(rx_now - rx_old, 0)
+            tx_delta = max(tx_now - tx_old, 0)
+
+            network = (
+                f"RX +{format_bytes(rx_delta)} / "
+                f"TX +{format_bytes(tx_delta)}"
+            )
+
+            print("\n  NETWORK ACTIVITY")
+            print(f"  {network}")
+
+        render_metrics(current_network)
+
+        previous_network = current_network
+        time.sleep(REFRESH_RATE)
+
+
+if __name__ == "__main__":
+    try:
+        run()
+    except KeyboardInterrupt:
+        clear_screen()
+        print("Klyro stopped.")
